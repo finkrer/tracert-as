@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 	"net"
 	"time"
@@ -24,16 +25,15 @@ func NewHop(number int, addr net.Addr, rtt time.Duration, success bool) Hop {
 
 // TraceRoute returns a channel of hop information values.
 func TraceRoute(host string) (<-chan Hop, error) {
-	out := make(chan Hop)
-
 	dest, err := net.ResolveIPAddr("ip4", host)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s is invalid", host)
 	}
 
 	ttl := 1
 	timeout := time.Second
 
+	out := make(chan Hop)
 	go func() {
 		defer close(out)
 		for {

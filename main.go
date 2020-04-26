@@ -26,6 +26,7 @@ func main() {
 	hops, err := TraceRoute(host)
 	if err != nil {
 		color.Red.Println(err)
+		return
 	}
 	for hop := range hops {
 		hop.printHop()
