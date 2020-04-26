@@ -23,39 +23,45 @@ func NewHop(number int, addr net.Addr, rtt time.Duration, success bool) Hop {
 }
 
 // TraceRoute returns a channel of hop information values.
-func TraceRoute(host string) (err error) {
+func TraceRoute(host string) (<-chan Hop, error) {
+	out := make(chan Hop)
+
 	dest, err := net.ResolveIPAddr("ip4", host)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	ttl := 1
 	timeout := time.Second
 
-	for {
-		hop := sendEcho(dest, ttl, ttl, timeout)
-		ttl++
-		if hop.Success {
-			if hop.Addr.String() == dest.String() {
-				break
+	go func() {
+		defer close(out)
+		for {
+			hop := sendEcho(dest, ttl, ttl, timeout)
+			out <- hop
+			ttl++
+			if hop.Success {
+				if hop.Addr.String() == dest.String() {
+					break
+				}
+				timeout = hop.Rtt*3 + time.Millisecond*50
 			}
-			timeout = hop.Rtt*3 + time.Millisecond*50
 		}
-	}
+	}()
 
-	return nil
+	return out, nil
 }
 
 func sendEcho(dest net.Addr, seq, ttl int, timeout time.Duration) (hop Hop) {
 	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
 	if err != nil {
-		return Hop{Success: false}
+		return Hop{Number: ttl, Success: false}
 	}
 	defer conn.Close()
 
 	echo, err := createICMPEcho(seq)
 	if err != nil {
-		return Hop{Success: false}
+		return Hop{Number: ttl, Success: false}
 	}
 	conn.IPv4PacketConn().SetTTL(ttl)
 
@@ -63,17 +69,17 @@ func sendEcho(dest net.Addr, seq, ttl int, timeout time.Duration) (hop Hop) {
 
 	_, err = conn.WriteTo(echo, dest)
 	if err != nil {
-		return Hop{Success: false}
+		return Hop{Number: ttl, Success: false}
 	}
 
 	reply := make([]byte, 1500)
 	err = conn.SetReadDeadline(time.Now().Add(timeout))
 	if err != nil {
-		return Hop{Success: false}
+		return Hop{Number: ttl, Success: false}
 	}
 	_, peer, err := conn.ReadFrom(reply)
 	if err != nil {
-		return Hop{Success: false}
+		return Hop{Number: ttl, Success: false}
 	}
 
 	rtt := time.Since(start)

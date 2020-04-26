@@ -22,9 +22,13 @@ func main() {
 	}
 	arguments, _ := docopt.ParseDoc(usage)
 	host, _ := arguments.String("<host>")
-	err := TraceRoute(host)
+
+	hops, err := TraceRoute(host)
 	if err != nil {
 		color.Red.Println(err)
+	}
+	for hop := range hops {
+		hop.printHop()
 	}
 }
 
