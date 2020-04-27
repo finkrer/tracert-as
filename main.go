@@ -35,13 +35,12 @@ func main() {
 
 func (hop *Hop) printHop() {
 	color.Normal.Printf("%3d ", hop.Number)
-	if !hop.Success {
-		color.Red.Printf("%15s\n", "*")
-	}
 	if hop.Success {
 		color.Yellow.Printf("%15s", hop.Addr.String())
 		color.Normal.Printf(": ")
 		color.Blue.Printf("%9s\n", hop.Rtt.Truncate(time.Microsecond))
+	} else {
+		color.Red.Printf("%15s\n", "*")
 	}
 	color.Normal.Println()
 }

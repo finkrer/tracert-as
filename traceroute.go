@@ -10,6 +10,8 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
+const maxHops = 64
+
 // Hop stores information about a single traceroute hop.
 type Hop struct {
 	Number  int
@@ -45,6 +47,9 @@ func TraceRoute(host string) (<-chan Hop, error) {
 					break
 				}
 				timeout = hop.Rtt*3 + time.Millisecond*50
+			}
+			if ttl > maxHops {
+				return
 			}
 		}
 	}()
