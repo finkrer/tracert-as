@@ -17,6 +17,7 @@ type Hop struct {
 	Number  int
 	Addr    net.Addr
 	Rtt     time.Duration
+	Type    icmp.Type
 	Success bool
 }
 
@@ -47,7 +48,7 @@ func TraceRoute(host string) (<-chan Hop, <-chan error) {
 			out <- hop
 			ttl++
 			if hop.Success {
-				if hop.Addr.String() == dest.String() {
+				if hop.Type == ipv4.ICMPTypeEchoReply {
 					break
 				}
 				timeout = hop.Rtt*3 + time.Millisecond*50
@@ -93,7 +94,12 @@ func sendEcho(dest net.Addr, seq, ttl int, timeout time.Duration) (hop Hop, err 
 
 	rtt := time.Since(start)
 
-	return Hop{Number: ttl, Addr: peer, Rtt: rtt, Success: true}, nil
+	message, err := icmp.ParseMessage(1, reply)
+	if err != nil {
+		return Hop{Number: ttl, Success: false}, nil
+	}
+
+	return Hop{Number: ttl, Addr: peer, Rtt: rtt, Type: message.Type, Success: true}, nil
 }
 
 func createICMPEcho(seq int) (request []byte, err error) {
