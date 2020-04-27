@@ -20,16 +20,15 @@ type Hop struct {
 	Success bool
 }
 
-// NewHop returns a new Hop value.
-func NewHop(number int, addr net.Addr, rtt time.Duration, success bool) Hop {
-	return Hop{Number: number, Addr: addr, Rtt: rtt, Success: success}
-}
-
 // TraceRoute returns a channel of hop information values.
-func TraceRoute(host string) (<-chan Hop, error) {
+func TraceRoute(host string) (<-chan Hop, <-chan error) {
+	errc := make(chan error, 1)
+
 	dest, err := net.ResolveIPAddr("ip4", host)
 	if err != nil {
-		return nil, fmt.Errorf("%s is invalid", host)
+		errc <- fmt.Errorf("%s is invalid", host)
+		defer close(errc)
+		return nil, errc
 	}
 
 	ttl := 1
@@ -38,8 +37,13 @@ func TraceRoute(host string) (<-chan Hop, error) {
 	out := make(chan Hop)
 	go func() {
 		defer close(out)
+		defer close(errc)
 		for {
-			hop := sendEcho(dest, ttl, ttl, timeout)
+			hop, err := sendEcho(dest, ttl, ttl, timeout)
+			if err != nil {
+				errc <- err
+				break
+			}
 			out <- hop
 			ttl++
 			if hop.Success {
@@ -54,19 +58,19 @@ func TraceRoute(host string) (<-chan Hop, error) {
 		}
 	}()
 
-	return out, nil
+	return out, errc
 }
 
-func sendEcho(dest net.Addr, seq, ttl int, timeout time.Duration) (hop Hop) {
+func sendEcho(dest net.Addr, seq, ttl int, timeout time.Duration) (hop Hop, err error) {
 	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
 	if err != nil {
-		return Hop{Number: ttl, Success: false}
+		return Hop{}, err
 	}
 	defer conn.Close()
 
 	echo, err := createICMPEcho(seq)
 	if err != nil {
-		return Hop{Number: ttl, Success: false}
+		return Hop{}, err
 	}
 	conn.IPv4PacketConn().SetTTL(ttl)
 
@@ -74,22 +78,22 @@ func sendEcho(dest net.Addr, seq, ttl int, timeout time.Duration) (hop Hop) {
 
 	_, err = conn.WriteTo(echo, dest)
 	if err != nil {
-		return Hop{Number: ttl, Success: false}
+		return Hop{}, err
 	}
 
 	reply := make([]byte, 1500)
 	err = conn.SetReadDeadline(time.Now().Add(timeout))
 	if err != nil {
-		return Hop{Number: ttl, Success: false}
+		return Hop{}, err
 	}
 	_, peer, err := conn.ReadFrom(reply)
 	if err != nil {
-		return Hop{Number: ttl, Success: false}
+		return Hop{Number: ttl, Success: false}, nil
 	}
 
 	rtt := time.Since(start)
 
-	return NewHop(ttl, peer, rtt, true)
+	return Hop{Number: ttl, Addr: peer, Rtt: rtt, Success: true}, nil
 }
 
 func createICMPEcho(seq int) (request []byte, err error) {

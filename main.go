@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/docopt/docopt-go"
@@ -23,17 +24,29 @@ func main() {
 	arguments, _ := docopt.ParseDoc(usage)
 	host, _ := arguments.String("<host>")
 
-	hops, err := TraceRoute(host)
-	if err != nil {
-		color.Red.Println(err)
-		return
+	fi, _ := os.Stdout.Stat()
+	if fi.Mode()&os.ModeCharDevice == 0 {
+		color.Disable()
 	}
-	for hop := range hops {
-		hop.printHop()
+
+	hops, errs := TraceRoute(host)
+	for {
+		select {
+		case err, ok := <-errs:
+			if !ok {
+				return
+			}
+			printErr(err)
+		case hop, ok := <-hops:
+			if !ok {
+				return
+			}
+			printHop(hop)
+		}
 	}
 }
 
-func (hop *Hop) printHop() {
+func printHop(hop Hop) {
 	color.Normal.Printf("%3d ", hop.Number)
 	if hop.Success {
 		color.Yellow.Printf("%15s", hop.Addr.String())
@@ -43,4 +56,14 @@ func (hop *Hop) printHop() {
 		color.Red.Printf("%15s\n", "*")
 	}
 	color.Normal.Println()
+}
+
+func printErr(err error) {
+	if strings.Contains(err.Error(), "operation not permitted") {
+		color.LightRed.Println("Could not get network permissions")
+		color.Normal.Println("Try running the program as root, or give it permission to use the network like this:")
+		color.Normal.Println("$ sudo setcap cap_net_raw+ep tracert-as")
+	} else {
+		color.LightRed.Println(err)
+	}
 }
