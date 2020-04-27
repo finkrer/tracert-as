@@ -42,12 +42,19 @@ func main() {
 				return
 			}
 			printHop(hop)
+			if hop.Success {
+				info, err := GetWhoisInfo(hop.Addr.String())
+				if err == nil {
+					printWhoisInfo(info)
+				}
+			}
+			color.Normal.Println()
 		}
 	}
 }
 
 func printHop(hop Hop) {
-	color.Normal.Printf("%3d ", hop.Number)
+	color.Normal.Printf("%2d ", hop.Number)
 	if hop.Success {
 		color.Yellow.Printf("%15s", hop.Addr.String())
 		color.Normal.Printf(": ")
@@ -55,7 +62,6 @@ func printHop(hop Hop) {
 	} else {
 		color.Red.Printf("%15s\n", "*")
 	}
-	color.Normal.Println()
 }
 
 func printErr(err error) {
@@ -66,4 +72,24 @@ func printErr(err error) {
 	} else {
 		color.LightRed.Println(err)
 	}
+}
+
+func printWhoisInfo(info WhoisInfo) {
+	color.Normal.Print("   ")
+	if info.Netname != "" {
+		color.Green.Print(info.Netname)
+	}
+	if info.Netname != "" && info.AS != "" {
+		color.Normal.Print(", ")
+	}
+	if info.AS != "" {
+		color.Magenta.Print(info.AS)
+	}
+	if info.AS != "" || info.Netname != "" && info.Country != "" {
+		color.Normal.Print(", ")
+	}
+	if info.Country != "" {
+		color.Cyan.Print(info.Country)
+	}
+	color.Normal.Println()
 }
