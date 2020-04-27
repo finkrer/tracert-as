@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"strings"
-	"time"
 
 	"github.com/docopt/docopt-go"
 	"github.com/gookit/color"
@@ -56,11 +55,9 @@ func main() {
 func printHop(hop Hop) {
 	color.Normal.Printf("%2d ", hop.Number)
 	if hop.Success {
-		color.Yellow.Printf("%15s", hop.Addr.String())
-		color.Normal.Printf(": ")
-		color.Blue.Printf("%9s\n", hop.Rtt.Truncate(time.Microsecond))
+		color.Yellow.Println(hop.Addr.String())
 	} else {
-		color.Red.Printf("%15s\n", "*")
+		color.Red.Println("*")
 	}
 }
 
