@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io/ioutil"
 	"net"
 	"strings"
@@ -9,15 +8,22 @@ import (
 )
 
 const (
-	ianaWhoisServer = "whois.iana.org"
-	whoisPort       = "43"
+	whoisPort = "43"
 )
 
 var (
-	referField    = []string{"refer", "ReferralServer"}
-	netnameField  = []string{"NetName", "netname"}
-	originASField = []string{"OriginAS", "origin", "aut-num"}
-	countryField  = []string{"Country", "country"}
+	rirs = []string{
+		"whois.ripe.net",
+		"whois.arin.net",
+		"whois.apnic.net",
+		"whois.lacnic.net",
+		"whois.afrinic.net",
+	}
+	badNetnames   = []string{"NON-RIPE-NCC-MANAGED-ADDRESS-BLOCK", "IANA-NETBLOCK", "ERX-NETBLOCK", "CIDR-BLOCK"}
+	referField    = []string{"refer: ", "ReferralServer: "}
+	netnameField  = []string{"NetName: ", "netname: "}
+	originASField = []string{"OriginAS: ", "origin: ", "aut-num: "}
+	countryField  = []string{"Country: ", "country: "}
 )
 
 // WhoisInfo contains information acquired from a whois request.
@@ -26,23 +32,26 @@ type WhoisInfo struct {
 }
 
 // GetWhoisInfo returns information acquired from a whois request.
-func GetWhoisInfo(host string) (WhoisInfo, error) {
+func GetWhoisInfo(host string) (info WhoisInfo, err error) {
 	if isLocal(host) {
 		return WhoisInfo{Netname: "local"}, nil
 	}
 
-	reply, err := getRawInfo(host)
-	if err != nil {
-		return WhoisInfo{}, err
+	replies := make(chan string, len(rirs))
+	for _, rir := range rirs {
+		go getRawInfo(host, rir, replies)
 	}
 
-	netname := parseField(reply, netnameField)
-	as := parseField(reply, originASField)
-	country := parseField(reply, countryField)
-
-	as = strings.TrimPrefix(as, "AS")
-
-	return WhoisInfo{Address: host, Netname: netname, AS: as, Country: country}, nil
+	maxFound := 0
+	for range rirs {
+		reply := <-replies
+		result, found := parseInfo(host, reply)
+		if found > maxFound {
+			maxFound = found
+			info = result
+		}
+	}
+	return
 }
 
 func isLocal(host string) bool {
@@ -58,23 +67,42 @@ func isLocal(host string) bool {
 	return len(ip) == 16 && ip[0]&0xfe == 0xfc
 }
 
-func getRawInfo(host string) (reply string, err error) {
-	server, reply, err := followReferral(host, ianaWhoisServer)
+func parseInfo(host, reply string) (info WhoisInfo, found int) {
+	var netname, as, country string
+
+	if netname = parseField(reply, netnameField); netname != "" {
+		found++
+	}
+	if as = parseField(reply, originASField); as != "" {
+		found++
+	}
+	if country = parseField(reply, countryField); country != "" {
+		found++
+	}
+
+	as = strings.TrimPrefix(as, "AS")
+
+	if _, pos := findAny(netname, badNetnames); pos != -1 {
+		return WhoisInfo{}, 0
+	}
+
+	return WhoisInfo{Address: host, Netname: netname, AS: as, Country: country}, found
+}
+
+func getRawInfo(host, server string, replies chan<- string) {
+	reply, err := followReferral(host, server)
+	if err != nil {
+		replies <- ""
+	}
+	replies <- reply
+}
+
+func followReferral(host string, referral string) (reply string, err error) {
+	reply, err = queryServer(host, referral)
 	if err != nil {
 		return "", err
 	}
-	if server == ianaWhoisServer {
-		return "", fmt.Errorf("Could not find the whois server")
-	}
-	return
-}
-
-func followReferral(host string, referral string) (foundServer, reply string, err error) {
-	reply, err = queryServer(host, referral)
-	if err != nil {
-		return "", "", err
-	}
-	foundServer = parseField(reply, referField)
+	foundServer := parseField(reply, referField)
 	if i := strings.LastIndex(foundServer, "/"); i != -1 {
 		foundServer = foundServer[i+1:]
 	}
@@ -99,7 +127,7 @@ func queryServer(host string, server string) (reply string, err error) {
 		return "", err
 	}
 
-	err = conn.SetReadDeadline(time.Now().Add(time.Second / 2))
+	err = conn.SetReadDeadline(time.Now().Add(time.Second * 2))
 	buffer, err := ioutil.ReadAll(conn)
 	if err != nil {
 		return "", err
@@ -108,15 +136,22 @@ func queryServer(host string, server string) (reply string, err error) {
 	return string(buffer), nil
 }
 
-func parseField(reply string, fieldVariants []string) (value string) {
-	for _, field := range fieldVariants {
-		token := field + ": "
-		pos := strings.Index(reply, token)
+func findAny(str string, tokens []string) (token string, pos int) {
+	for _, token := range tokens {
+		pos = strings.Index(str, token)
 		if pos != -1 {
-			pos += len(token)
-			len := strings.Index(reply[pos:], "\n")
-			return strings.TrimSpace(reply[pos : pos+len])
+			return token, pos
 		}
 	}
-	return ""
+	return "", -1
+}
+
+func parseField(reply string, fieldVariants []string) (value string) {
+	token, pos := findAny(reply, fieldVariants)
+	if pos == -1 {
+		return
+	}
+	pos += len(token) + 2
+	len := strings.Index(reply[pos:], "\n")
+	return strings.TrimSpace(reply[pos : pos+len])
 }

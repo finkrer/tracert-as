@@ -82,7 +82,7 @@ func printWhoisInfo(info WhoisInfo) {
 	if info.AS != "" {
 		color.Magenta.Print(info.AS)
 	}
-	if info.AS != "" || info.Netname != "" && info.Country != "" {
+	if (info.AS != "" || info.Netname != "") && info.Country != "" {
 		color.Normal.Print(", ")
 	}
 	if info.Country != "" {
